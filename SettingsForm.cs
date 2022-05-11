@@ -4,7 +4,7 @@ namespace MatrixRain
 {
     public partial class SettingsForm : Form
     {
-        const int DefaultRunners = 15;
+        private const int DefaultRunners = 15;
         public SettingsForm()
         {
             InitializeComponent();
@@ -19,11 +19,15 @@ namespace MatrixRain
             LinesInput.Value = DefaultRunners;
             RegistryKey key = Registry.CurrentUser.CreateSubKey("SOFTWARE\\MatrixRainScreensaver");
             //If CreateSubKey fails, it will return null.
-            var tmp = key.GetValue("ConcurrentRunners");
+            object? tmp = key.GetValue("ConcurrentRunners");
             if (tmp != null)
+            {
                 LinesInput.Value = (int)tmp;
+            }
             else
+            {
                 key.SetValue("ConcurrentRunners", DefaultRunners, RegistryValueKind.DWord);
+            }
         }
         /// Save settings into the registry
         /// </summary>
@@ -38,7 +42,9 @@ namespace MatrixRain
             SaveSettings();
             Close();
         }
-        private void CancelButton_Click(object sender, EventArgs e) => Close();
-
+        private void CancelButton_Click(object sender, EventArgs e)
+        {
+            Close();
+        }
     }
 }

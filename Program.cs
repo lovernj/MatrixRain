@@ -1,12 +1,12 @@
 namespace MatrixRain
 {
-    static class Program
+    internal static class Program
     {
         /// <summary>
         /// The main entry point for the application.
         /// </summary>
         [STAThread]
-        static void Main(string[] args)
+        private static void Main(string[] args)
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
@@ -34,7 +34,7 @@ namespace MatrixRain
                 }
                 else if (firstArgument == "/p")      // Preview mode
                 {
-                    if (secondArgument.Length>0)
+                    if (secondArgument.Length > 0)
                     {
                         MessageBox.Show("Sorry, but the expected window handle was not provided.",
                             "ScreenSaver", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
@@ -65,7 +65,7 @@ namespace MatrixRain
         /// <summary>
         /// Display the form on each of the computer's monitors.
         /// </summary>
-        static void ShowScreenSaver()
+        private static void ShowScreenSaver()
         {
             //Code for showing on one monitor
             //Screensaver screensaver = new(Screen.AllScreens[2].Bounds);
