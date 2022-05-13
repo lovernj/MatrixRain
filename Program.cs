@@ -1,3 +1,8 @@
+
+#define ONEMONITOR
+#if ONEMONITOR
+    #undef ONEMONITOR
+#endif
 namespace MatrixRain
 {
     internal static class Program
@@ -68,15 +73,18 @@ namespace MatrixRain
         private static void ShowScreenSaver()
         {
             //Code for showing on one monitor
-            //Screensaver screensaver = new(Screen.AllScreens[2].Bounds);
-            //screensaver.Show();
+#if ONEMONITOR
+            Screensaver screensaver = new(Screen.AllScreens[2].Bounds);
+            screensaver.Show();
+#else
+
             //Code for showing on all monitors
             foreach (Screen screen in Screen.AllScreens)
             {
                 Screensaver screensaver = new(screen.Bounds);
                 screensaver.Show();
             }
-
+#endif
         }
 
     }

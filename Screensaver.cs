@@ -8,6 +8,14 @@ namespace MatrixRain
     /// </summary>
     public sealed partial class Screensaver : Form
     {
+        private const int DefaultRunners = 15;
+        private const int DefaultMsPerTick = 20;
+
+#if DEBUG
+        private const int DebugDefaultRunners = 70;
+        private const int DebugDefaultMsPerTick = 5;
+#endif
+
         #region Win32 API functions
         [DllImport("user32.dll")]
         private static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
@@ -23,45 +31,13 @@ namespace MatrixRain
 
         #endregion
 
-        #region consts
-        private const int DefaultRunners = 15;
-        #endregion
-
-        #region static variables
-        //Static readonlys.
-        private static readonly Brush CursorBrush = new SolidBrush(Color.White);
-        private static readonly Brush BgBrush = new SolidBrush(Color.FromArgb(6, 0, 10, 0));
-        private static readonly Random rand = new(); //NOT SECURE! Don't use it for crypto. 
-        private static string GetRandChar()
-        {
-            return Convert.ToChar(rand.Next(0xff01, 0xff9d)).ToString();
-        }
-        #endregion
-
-        #region instance readonly variables
-        private readonly Font myFont;
-        private readonly bool PreviewMode = false;
-        private readonly int horiz_modifier;
-        private readonly int vert_modifier;
-        #endregion
-
-
-        //Timing objects
-        private int ticks = 0;
-        private System.Threading.Timer TickTimer;
-
-        private delegate void tickhandler();
-
-
-        //Graphics objects
-        private BufferedGraphics? graphicsBuffer;
-        private Graphics? gbGraphics;
-        private Bitmap bitmap;
-
-        //simulation objects
-        private List<Runner> Runners;
         private class Runner
         {
+            public int Velocity { get; private set; }
+            public PointF Location;
+            public string LastCharacter = " ";
+            private readonly int horiz_mod, horiz_mult, vert_mod, vert_mult;
+            public PointF GetLocInColumn() => new(Location.X, Location.Y - vert_mod * rand.Next(vert_mult / 4));
             public Runner(Screensaver parent)
             {
                 horiz_mod = parent.horiz_modifier;
@@ -74,11 +50,7 @@ namespace MatrixRain
             {
                 Location.X = horiz_mod * rand.Next(horiz_mult);
                 Location.Y = vert_mod * rand.Next(vert_mult);
-                Velocity = rand.Next(1, 8);
-            }
-            public PointF GetLocInColumn()
-            {
-                return new PointF(Location.X, Location.Y - vert_mod * rand.Next(vert_mult / 4));
+                Velocity = rand.Next(5, 20);
             }
             public static Runner operator ++(Runner lhs)
             {
@@ -86,20 +58,38 @@ namespace MatrixRain
                 lhs.LastCharacter = GetRandChar();
                 return lhs;
             }
-
-            public int Velocity { get; private set; }
-            public PointF Location;
-            public string LastCharacter = " ";
-            private readonly int horiz_mod, horiz_mult, vert_mod, vert_mult;
         }
 
+        #region Variables
+        private readonly Font myFont;
+        private readonly bool PreviewMode = false;
+        private readonly int horiz_modifier;
+        private readonly int vert_modifier;
 
-        //
+        private int ticks = 0;
+        private int MsPerTick;
+        private System.Threading.Timer TickTimer;
+        private System.Threading.Timer DrawTimer;
+
+        //Graphics objects
+        private BufferedGraphics? graphicsBuffer;
+        private Bitmap bitmap;
+
+        //simulation objects
+        private List<Runner> Runners;
+
+        private delegate void tickhandler();
+
         private Rectangle NormalizedBounds;
         private Point mouseLocation; //Track the mouse to see if it's moved more than 5px recently
 
-        #region constructors
+        private static readonly Brush CursorBrush = new SolidBrush(Color.White);
+        private static readonly Brush BgBrush = new SolidBrush(Color.FromArgb(6, 0, 20, 0));
+        private static readonly Random rand = new(); //NOT SECURE! Don't use it for crypto. 
+        private static string GetRandChar() => Convert.ToChar(rand.Next(0xff01, 0xff9d)).ToString();
+        #endregion
 
+        #region Constructors
         /// <summary>
         /// Initialize a <c>screensaver</c> to a specific bounds
         /// </summary>
@@ -107,10 +97,10 @@ namespace MatrixRain
         {
             InitializeComponent();
             this.Bounds = Bounds;
-            myFont = new Font("Lucida Console", 8F, FontStyle.Regular, GraphicsUnit.Point, 0);
-
-            horiz_modifier = 12;
-            vert_modifier = 10;
+            myFont = new Font("Lucida Console", 8F);
+            
+            horiz_modifier = 11;
+            vert_modifier = 9;
 
             LoadData();
         }
@@ -139,7 +129,7 @@ namespace MatrixRain
             Bounds = ParentRect;
 
             // Make text smaller
-            myFont = new Font("Lucida Console", 5F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            myFont = new Font("Lucida Console", 5F);
             horiz_modifier = 7;
             vert_modifier = 5;
 
@@ -153,35 +143,48 @@ namespace MatrixRain
         /// </summary>
         [MemberNotNull(nameof(bitmap),
                        nameof(Runners),
-                       nameof(TickTimer))]
+                       nameof(TickTimer),
+                       nameof(DrawTimer),
+                       nameof(MsPerTick))]
         private void LoadData()
         {
             NormalizedBounds = new Rectangle(0, 0, Bounds.Width, Bounds.Height);
             bitmap = new Bitmap(Bounds.Width, Bounds.Height, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
 
+
+#if DEBUG
+            int concurrentRunners = DebugDefaultRunners;
+            MsPerTick = DebugDefaultMsPerTick;
+#else
             int concurrentRunners = DefaultRunners;
             RegistryKey key = Registry.CurrentUser.CreateSubKey("SOFTWARE\\MatrixRainScreensaver");
             // Try to set concurrentRunners from the registry. Or if it doesn't exist, setup the registry
             object? keyvalue = key.GetValue("ConcurrentRunners");
 
             if (keyvalue == null)
-            {
                 key.SetValue("ConcurrentRunners", DefaultRunners, RegistryValueKind.DWord);
-            }
             else
-            {
                 concurrentRunners = (int)keyvalue;
-            }
 
+            MsPerTick = DefaultRunners;
+
+            key = Registry.CurrentUser.CreateSubKey("SOFTWARE\\MatrixRainScreensaver");
+            // Try to set concurrentRunners from the registry. Or if it doesn't exist, setup the registry
+            keyvalue = key.GetValue("MsPerTick");
+
+            if (keyvalue == null)
+                key.SetValue("MsPerTick", DefaultRunners, RegistryValueKind.DWord);
+            else
+                MsPerTick = (int)keyvalue;
+#endif
             //setup the runner structs.
             Runners = new List<Runner>();
             for (int ii = 0; ii < concurrentRunners; ii++)
-            {
                 Runners.Add(new Runner(this));
-            }
 
             // start the tick timer. 
             TickTimer = new System.Threading.Timer(new TimerCallback(_ => Invoke((MethodInvoker)delegate () { TimerTick(); })));
+            DrawTimer = new System.Threading.Timer(new TimerCallback(_ => Invalidate()));
         }
 
         /// <summary>
@@ -190,53 +193,46 @@ namespace MatrixRain
         private void TimerTick()
         {
             ticks++;
-            using (Graphics g = Graphics.FromImage(bitmap))
+            using Graphics g = Graphics.FromImage(bitmap);
+            // Once every six ticks, darken the screen a little. 
+            // FillRectangle is slow, so having BgBrush be higher alpha and doing 
+            // this less frequently is more performant.
+            if ((ticks % 6) == 0)
+                g.FillRectangle(BgBrush, NormalizedBounds);
+
+            for (int ii = 0; ii < Runners.Count; ii++)
             {
-                // Once every six ticks, darken the screen a little. 
-                // FillRectangle is slow, so having BgBrush be higher alpha and doing 
-                // this less frequently is more performant.
-                if ((ticks % 6) == 0)
+                Runner runner = Runners[ii];
+                if ((ticks % runner.Velocity) == 0)
                 {
-                    g.FillRectangle(BgBrush, NormalizedBounds);
-                }
+                    if (runner.Location.Y >= Bounds.Bottom)
+                        runner.Update();
 
-                for (int ii = 0; ii < Runners.Count; ii++)
-                {
-                    Runner runner = Runners[ii];
-                    if ((ticks % runner.Velocity) == 0)
+                    using (Brush tmpGreen = new SolidBrush(Color.FromArgb(255, 20, rand.Next(20, 255), 20)))
                     {
-                        if (runner.Location.Y > Bounds.Bottom)
-                        {
-                            runner.Update();
-                        }
-
-                        using (Brush tmpGreen = new SolidBrush(Color.FromArgb(255, 0, rand.Next(90, 170), 0)))
-                        {
-                            if (rand.Next(15) == 1)
-                            {
-                                g.DrawString(GetRandChar(), myFont, tmpGreen, runner.GetLocInColumn());
-                            }
-
-                            g.DrawString(runner.LastCharacter, myFont, tmpGreen, runner.Location);
-                        }
-                        //Update the location and character
-                        runner++;
+                        if (rand.Next(15) == 1)
+                            g.DrawString(GetRandChar(), myFont, tmpGreen, runner.GetLocInColumn());
+                        g.DrawString(runner.LastCharacter, myFont, tmpGreen, runner.Location);
                     }
-                    g.DrawString(runner.LastCharacter, myFont, CursorBrush, runner.Location);
-
-                    //Copy it back
-                    Runners[ii] = runner;
+                    //Update the location and character
+                    runner++;
                 }
+                g.DrawString(runner.LastCharacter, myFont, CursorBrush, runner.Location);
+
+                //Copy it back
+                Runners[ii] = runner;
             }
             // Draw the image to the graphics buffer. 
             // Most of the CPU time is spent in this function
             // but like... I can't really change that
-            gbGraphics.DrawImage(bitmap, 0, 0);
-            graphicsBuffer.Render(CreateGraphics());
         }
-        #region Overrided Events
+#region Overrided Events
         protected override void OnPaintBackground(PaintEventArgs e) { }
-        protected override void OnPaint(PaintEventArgs e) { }
+        protected override void OnPaint(PaintEventArgs e) {
+            Graphics gbGraphics = graphicsBuffer.Graphics;
+            gbGraphics.DrawImage(bitmap, 0, 0);
+            graphicsBuffer.Render(e.Graphics);
+        }
 
         /// <summary>
         /// Setup the remaining structures after the UI has finished loading
@@ -246,35 +242,24 @@ namespace MatrixRain
             base.OnLoad(e);
             //Setup the graphics contexts necessary
             using (Graphics g = CreateGraphics())
-            {
                 graphicsBuffer = BufferedGraphicsManager
                                  .Current
                                  .Allocate(g, NormalizedBounds);
-            }
-
-            gbGraphics = graphicsBuffer.Graphics;
-            gbGraphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-            gbGraphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
 
             using (Graphics g = Graphics.FromImage(bitmap))
             {
                 // Fill the screen with preformatted text
                 // so when text glows it doesn't look so weird
                 for (int x = 0; x < Bounds.Width / horiz_modifier; x++)
-                {
                     for (int y = 0; y < Bounds.Height / vert_modifier; y++)
-                    {
                         using (Brush tmpGreen = new SolidBrush(Color.FromArgb(255, 0, rand.Next(90, 170), 0)))
-                        {
                             g.DrawString(GetRandChar(), myFont, tmpGreen, new PointF(x * horiz_modifier, y * vert_modifier));
-                        }
-                    }
-                }
                 // Apply a heavy alpha-wash so it doesn't stand out so much. 
-                g.FillRectangle(new SolidBrush(Color.FromArgb(225, 0, 10, 0)), NormalizedBounds);
+                g.FillRectangle(new SolidBrush(Color.FromArgb(225, 0, 0, 0)), NormalizedBounds);
             }
 
-            TickTimer.Change(0, 25);
+            TickTimer.Change(0, MsPerTick); 
+            DrawTimer.Change(0, 41); //24fps. (ish). Roughly the speed a movie runs at
             Cursor.Hide();
             TopMost = true;
         }
@@ -282,9 +267,7 @@ namespace MatrixRain
         protected override void OnKeyPress(KeyPressEventArgs e)
         {
             if (!PreviewMode)
-            {
                 Application.Exit();
-            }
         }
         protected override void OnMouseMove(MouseEventArgs e)
         {
@@ -294,13 +277,12 @@ namespace MatrixRain
                 if (!mouseLocation.IsEmpty &&
                     (Math.Abs(mouseLocation.X - e.X) > 5 ||
                      Math.Abs(mouseLocation.Y - e.Y) > 5))
-                {
                     Application.Exit();
-                }
+
                 // Update current mouse location
                 mouseLocation = e.Location;
             }
         }
-        #endregion
+#endregion
     }
 }

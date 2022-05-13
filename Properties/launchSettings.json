@@ -1,6 +1,13 @@
 {
   "profiles": {
-    "MatrixRain": {
+    "Settings Form": {
+      "commandName": "Project"
+    },
+    "Screensaver": {
+      "commandName": "Project",
+      "commandLineArgs": "/s"
+    },
+    "ScreensaverLeftOnly": {
       "commandName": "Project",
       "commandLineArgs": "/s"
     }
