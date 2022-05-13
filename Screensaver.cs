@@ -138,9 +138,35 @@ namespace MatrixRain
         }
         #endregion
         /// <summary>
+        /// Get a value from the registry and convert it to a <typeparamref name="T"/>. 
+        /// This method is extremely tolerant and will always try to return a coherent value. 
+        /// Don't make it. 
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="subkey">HKEY_CURRENT_USER\subkey</param>
+        /// <param name="value">The dictionary value to retrieve from </param>
+        /// <param name="defaultValue">If in any case you cannot retrieve a value, return this instead.</param>
+        /// <returns>The value of the registry, or defaultValue if it doesn't exist, or the default value of T if that doesn't exist.</returns>
+        private static T? GetFromRegistry<T>(string subkey, string value, T? defaultValue)
+        {
+            RegistryKey? key = Registry.CurrentUser.OpenSubKey(subkey);
+            if (key==null)
+            {
+                if (defaultValue == null)
+                    return default;
+                return defaultValue;
+            }
+            object? keyvalue = key.GetValue(value);
+            if (keyvalue == null)
+                return defaultValue;
+            return (T)keyvalue;
+        }
+
+        /// <summary>
         /// Setup structures that can be determined before UI-time
         /// in a constructor-invariant way. 
         /// </summary>
+        /// 
         [MemberNotNull(nameof(bitmap),
                        nameof(Runners),
                        nameof(TickTimer),
@@ -156,26 +182,8 @@ namespace MatrixRain
             int concurrentRunners = DebugDefaultRunners;
             MsPerTick = DebugDefaultMsPerTick;
 #else
-            int concurrentRunners = DefaultRunners;
-            RegistryKey key = Registry.CurrentUser.CreateSubKey("SOFTWARE\\MatrixRainScreensaver");
-            // Try to set concurrentRunners from the registry. Or if it doesn't exist, setup the registry
-            object? keyvalue = key.GetValue("ConcurrentRunners");
-
-            if (keyvalue == null)
-                key.SetValue("ConcurrentRunners", DefaultRunners, RegistryValueKind.DWord);
-            else
-                concurrentRunners = (int)keyvalue;
-
-            MsPerTick = DefaultRunners;
-
-            key = Registry.CurrentUser.CreateSubKey("SOFTWARE\\MatrixRainScreensaver");
-            // Try to set concurrentRunners from the registry. Or if it doesn't exist, setup the registry
-            keyvalue = key.GetValue("MsPerTick");
-
-            if (keyvalue == null)
-                key.SetValue("MsPerTick", DefaultRunners, RegistryValueKind.DWord);
-            else
-                MsPerTick = (int)keyvalue;
+            int concurrentRunners = GetFromRegistry("SOFTWARE\\MatrixRainScreensaver", "ConcurrentRunners", DefaultRunners);
+            MsPerTick = GetFromRegistry("SOFTWARE\\MatrixRainScreensaver", "MsPerTick", DefaultMsPerTick);
 #endif
             //setup the runner structs.
             Runners = new List<Runner>();
